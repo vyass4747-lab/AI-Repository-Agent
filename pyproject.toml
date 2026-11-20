@@ -7,7 +7,14 @@ authors = [
     { name = "suhani18vyas", email = "vyass4747@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "langchain>=1.5.0",
+    "langchain-groq>=1.2.0",
+    "langgraph>=1.2.22",
+    "pydantic>=2.14.3",
+    "pytest>=9.2.0",
+    "python-dotenv>=1.2.4",
+]
 
 [project.scripts]
 ai-repository-agent = "ai_repository_agent:main"
