@@ -1,8 +1,24 @@
+import re
+from contextvars import ContextVar
 from pathlib import Path
+
 from langchain.tools import tool
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT: ContextVar[Path] = ContextVar(
+    "repository_project_root",
+    default=DEFAULT_PROJECT_ROOT,
+)
+
+
+def set_repository_root(root: Path):
+    """Set the repository root for the current request."""
+    return PROJECT_ROOT.set(root.resolve())
+
+
+def reset_repository_root(token) -> None:
+    PROJECT_ROOT.reset(token)
 
 IGNORED_DIRS = {
     ".git",
@@ -10,6 +26,14 @@ IGNORED_DIRS = {
     "venv",
     "__pycache__",
     "node_modules",
+}
+
+TEXT_EXTENSIONS = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".cs", ".go",
+    ".rs", ".rb", ".php", ".html", ".css", ".scss", ".json", ".yaml",
+    ".yml", ".toml", ".ini", ".cfg", ".conf", ".md", ".txt", ".sql",
+    ".sh", ".bash", ".ps1", ".c", ".cpp", ".h", ".hpp", ".vue",
+    ".svelte", ".xml", ".gradle",
 }
 
 
@@ -21,15 +45,19 @@ def list_repository_tool() -> str:
 
     """
 
+    root = PROJECT_ROOT.get()
     files = []
-
-    for path in PROJECT_ROOT.rglob("*"):
+    for path in root.rglob("*"):
 
         if any(part in IGNORED_DIRS for part in path.parts):
             continue
 
-        if path.is_file() and path.name != ".env":
-            files.append(str(path.relative_to(PROJECT_ROOT)))
+        if (
+            path.is_file()
+            and path.name != ".env"
+            and not path.name.startswith(".env.")
+        ):
+            files.append(str(path.relative_to(root)))
 
 
     return "\n".join(sorted(files)) if files else "No files found"
@@ -43,10 +71,11 @@ def read_file(file_path: str) -> str:
     """Read a file safely from the current repository."""
 
     try:
-        resolved_path = (PROJECT_ROOT / file_path).resolve()
+        root = PROJECT_ROOT.get()
+        resolved_path = (root / file_path).resolve()
 
         # Ensure the path stays inside the repository
-        resolved_path.relative_to(PROJECT_ROOT.resolve())
+        resolved_path.relative_to(root.resolve())
 
         # Reject sensitive files
         if resolved_path.name == ".env" or resolved_path.name.startswith(".env."):
@@ -71,3 +100,36 @@ def read_file(file_path: str) -> str:
         return "Access denied: File is outside the repository."
     except (OSError, UnicodeDecodeError):
         return "Error: Could not read this file."
+
+
+@tool
+def search_repository(query: str, max_results: int = 60) -> str:
+    """Search text files in the repository for a keyword or regular expression."""
+    try:
+        pattern = re.compile(query, re.IGNORECASE)
+    except re.error:
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+
+    root = PROJECT_ROOT.get()
+    matches = []
+    for path in root.rglob("*"):
+        if not path.is_file() or any(part in IGNORED_DIRS for part in path.parts):
+            continue
+        if path.suffix.lower() not in TEXT_EXTENSIONS or path.name.startswith(".env"):
+            continue
+
+        try:
+            if path.stat().st_size > 1_000_000:
+                continue
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        for line_number, line in enumerate(lines, start=1):
+            if pattern.search(line):
+                relative = path.relative_to(root).as_posix()
+                matches.append(f"{relative}:{line_number}:{line.strip()}")
+                if len(matches) >= max_results:
+                    return "\n".join(matches)
+
+    return "\n".join(matches) if matches else "No matches found."

@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from ai-repository-agent!")
+from ai_repository_agent.main import main
+
+__all__ = ["main"]
