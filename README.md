@@ -16,7 +16,7 @@ Open `http://localhost:8000`.
 
 Users can load a public GitHub, GitLab, or Bitbucket HTTPS repository URL,
 or upload a ZIP repository archive, then ask repository-grounded questions.
-
+![Home Page](home.png)
 Set a Groq API key in `.env`:
 
 ```text
